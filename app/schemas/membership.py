@@ -17,6 +17,7 @@ class MembershipRead(MembershipBase):
     id: UUID
     user_id: UUID
     organization_id: UUID
+    role: str
     created_at: datetime
 
     class Config:

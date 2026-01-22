@@ -1,48 +1,39 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from app.db.base import Base
-from typing import List
-from datetime import datetime
+from typing import List, Optional
+from uuid import UUID
 
-from app.db.session import AsyncSessionLocal
-from app.models.user import User
-from app.models.organization import Organization
-from app.models.membership import OrganizationMember
+from app.db.session import get_db
 from app.schemas.membership import MembershipCreate, MembershipRead
+from app.services.memberships import MembershipService
 
-router = APIRouter(prefix="/orgs/{org_id}/members", tags=["memberships"])
+router = APIRouter(prefix="/memberships", tags=["memberships"])
 
-async def get_db() -> AsyncSession:
-    async with AsyncSessionLocal() as session:
-        yield session
 
-@router.get("/", response_model=List[MembershipRead])
-async def get_org_members(org_id: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(OrganizationMember).where(OrganizationMember.organization_id == org_id)
+@router.get("", response_model=List[MembershipRead])
+async def list_memberships(
+    organization_id: Optional[UUID] = None,
+    user_id: Optional[UUID] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    return await MembershipService.get_memberships(
+        db=db,
+        organization_id=organization_id,
+        user_id=user_id,
     )
-    return result.scalars().all()
 
-@router.post("/", response_model=MembershipRead)
-async def add_member(org_id: str, membership_in: MembershipCreate, db: AsyncSession = Depends(get_db)):
-    # Ensure org exists
-    org = await db.get(Organization, org_id)
-    if not org:
-        raise HTTPException(status_code=404, detail="Organization not found")
-
-    # Ensure user exists
-    user = await db.get(User, membership_in.user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    new_membership = OrganizationMember(
-        user_id=user.id,
-        organization_id=org.id,
-        role=membership_in.role,
-        created_at=datetime.utcnow()
-    )
-    db.add(new_membership)
-    await db.commit()
-    await db.refresh(new_membership)
-    return new_membership
+@router.post("/", response_model=MembershipRead, status_code=status.HTTP_201_CREATED)
+async def add_member(
+    payload: MembershipCreate,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        membership = await MembershipService.add_member(
+            db=db,
+            organization_shortname=payload.organization_shortname,
+            user_email=payload.email,
+            role=payload.role,
+        )
+        return membership
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
