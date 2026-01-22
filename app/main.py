@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from app.routers import users, orgs, memberships
 from app.core.config import settings
 
 app = FastAPI(
@@ -7,6 +8,10 @@ app = FastAPI(
     version="0.1.0",
     environment=settings.environment,
 )
+
+app.include_router(users.router)
+app.include_router(orgs.router)
+app.include_router(memberships.router)
 
 @app.get("/")
 async def root():
