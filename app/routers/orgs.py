@@ -1,41 +1,32 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from app.db.base import Base
-from typing import List
-from datetime import datetime
+from uuid import UUID
 
-from app.db.session import AsyncSessionLocal
-from app.models.organization import Organization
-from app.schemas.organization import OrganizationCreate, OrganizationRead
+from app.db.session import get_db
+from app.schemas.organization import OrganizationRead, OrganizationCreate
+from app.services.organizations import OrganizationService
 
 router = APIRouter(prefix="/orgs", tags=["organizations"])
 
-async def get_db() -> AsyncSession:
-    async with AsyncSessionLocal() as session:
-        yield session
 
-@router.get("/", response_model=List[OrganizationRead])
-async def get_orgs(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Organization))
-    return result.scalars().all()
+@router.get("/", response_model=list[OrganizationRead])
+async def list_organizations(db: AsyncSession = Depends(get_db)):
+    return await OrganizationService.list(db)
+
+
+@router.post("/", response_model=OrganizationRead)
+async def create_org(
+    org_in: OrganizationCreate,
+    db: AsyncSession = Depends(get_db),
+):
+    return await OrganizationService.create(db, org_in)
 
 @router.get("/{org_id}", response_model=OrganizationRead)
-async def get_org(org_id: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Organization).where(Organization.id == org_id))
-    org = result.scalar_one_or_none()
+async def get_org(
+    org_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    org = await OrganizationService.get_by_id(db, org_id)
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
     return org
-
-@router.post("/", response_model=OrganizationRead)
-async def create_org(org_in: OrganizationCreate, db: AsyncSession = Depends(get_db)):
-    new_org = Organization(
-        name=org_in.name,
-        shortname=org_in.shortname,
-        created_at=datetime.utcnow()
-    )
-    db.add(new_org)
-    await db.commit()
-    await db.refresh(new_org)
-    return new_org
